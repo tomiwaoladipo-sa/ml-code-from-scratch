@@ -181,15 +181,26 @@ def find_best_split(feature_arrays, target_arr):
 
 def build_tree(feature_arrays, target_arr, max_depth=10):
     """
-    # add function to travel down branches for loop and return variables to split the data
-    # split feature and target data, find the best split, create leaf
+    Recursively build the decision tree.
+
+    This function splits the data based on the best feature and threshold, and then
+    recursively builds the left and right subtrees until the maximum depth is reached
+    or no further splits can be made.
+
+    Parameters:
+        feature_arrays (numpy.ndarray): A 2D array where each column represents a feature.
+        target_arr (numpy.ndarray): A 1D array representing the target variable.
+        max_depth (int): The maximum depth of the tree.
+
+    Returns:
+        dict: A dictionary representing the decision tree.
     """
 
     weighted_entropy_best, feature_threshold_best, feature_best = find_best_split(
         feature_arrays, target_arr
     )
 
-    if max_depth == 0 or weighted_entropy_best == 0:
+    if max_depth == 0 or weighted_entropy_best == 0 or len(target_arr) < 2:
         counts = np.bincount(target_arr)
         return {"leaf_node": 1, "class": np.argmax(counts)}
 
@@ -214,3 +225,44 @@ def build_tree(feature_arrays, target_arr, max_depth=10):
     }
 
     return tree
+
+
+# a recursive approach can be used instead of the while loop
+def predict(arr_features, custom_tree):
+    """
+    Predict the class labels for the given features using a custom decision tree.
+
+    Parameters:
+    arr_features (numpy.ndarray): A 2D array where each row represents the features of a single sample.
+    custom_tree (dict): A dictionary representing the decision tree. The tree should have the following structure:
+        {
+            "leaf_node": int,  # 1 if it's a leaf node, 0 otherwise
+            "class": int,      # The class label if it's a leaf node
+            "feature": int,    # The index of the feature to split on
+            "threshold": float,# The threshold value to split the feature
+            "left": dict,      # The left subtree (if not a leaf node)
+            "right": dict      # The right subtree (if not a leaf node)
+        }
+
+    Returns:
+    numpy.ndarray: An array of predicted class labels for each row in arr_features.
+    """
+    tree_copy = custom_tree.copy()
+    leaf_node = tree_copy["leaf_node"]
+    predictions = np.array([])
+
+    for row in arr_features:
+        tree_copy = custom_tree.copy()
+        while leaf_node == 0:
+            if tree_copy["leaf_node"] == 1:
+                predictions = np.append(predictions, tree_copy["class"])
+                break
+
+            feature = tree_copy["feature"]
+            threshold = tree_copy["threshold"]
+
+            if row[feature] > threshold:
+                tree_copy = tree_copy["left"]
+            else:
+                tree_copy = tree_copy["right"]
+    return predictions
