@@ -106,18 +106,17 @@ def weighted_entropy(child_entropies: list, child_weights: list):
 
 def find_best_split(feature_arrays, target_arr):
     """
-    Identify the best feature and threshold for splitting the data.
-
-    This function iterates over all features and their possible thresholds to find the split
-    that results in the lowest weighted entropy. The best split is determined by comparing
-    the weighted entropy of the child nodes for each possible split.
+    Finds the best feature and threshold to split the data to minimize the weighted entropy.
 
     Parameters:
-        feature_arrays (numpy.ndarray): A 2D array where each column represents a feature.
-        target_arr (numpy.ndarray): A 1D array representing the target variable.
+    feature_arrays (numpy.ndarray): 2D array where each column represents a feature and each row represents an observation.
+    target_arr (numpy.ndarray): 1D array representing the target values corresponding to the observations.
 
     Returns:
-        tuple: A tuple containing the best weighted entropy, the best threshold, and the index of the best feature.
+    tuple: A tuple containing:
+        - weighted_entropy_best (float): The best (minimum) weighted entropy found.
+        - feature_threshold_best (float): The threshold value of the best feature to split on.
+        - feature_best (int): The index of the best feature to split on.
     """
     weighted_entropy_best = 10000000
     feature_best = 0
@@ -179,7 +178,7 @@ def find_best_split(feature_arrays, target_arr):
 #     return leaf_dictionary
 
 
-def build_tree(feature_arrays, target_arr, max_depth=10):
+def build_tree(feature_arrays, target_arr, max_depth=10, parent_entropy=None):
     """
     Recursively build the decision tree.
 
@@ -199,10 +198,23 @@ def build_tree(feature_arrays, target_arr, max_depth=10):
     weighted_entropy_best, feature_threshold_best, feature_best = find_best_split(
         feature_arrays, target_arr
     )
+    if parent_entropy is not None:
+        information_gain_best = information_gain(parent_entropy, weighted_entropy_best)
+    else:
+        information_gain_best = 10000
 
-    if max_depth == 0 or weighted_entropy_best == 0 or len(target_arr) < 2:
+    if max_depth == 0 or len(target_arr) < 2 or information_gain_best <= 0.01:
         counts = np.bincount(target_arr)
-        return {"leaf_node": 1, "class": np.argmax(counts)}
+        return {
+            "leaf_node": 1,
+            "entopy": entropy(target_arr),
+            "parent_entropy": parent_entropy,
+            "weighted_entropy": weighted_entropy_best,
+            "information_gain": information_gain_best,
+            "class_perc": sum(target_arr) / len(target_arr),
+            "samples": len(target_arr),
+            "class": np.argmax(counts),
+        }
 
     max_depth -= 1
 
@@ -220,8 +232,13 @@ def build_tree(feature_arrays, target_arr, max_depth=10):
         "leaf_node": 0,
         "feature": feature_best,
         "threshold": feature_threshold_best,
-        "left": build_tree(left_features, left_target, max_depth),
-        "right": build_tree(right_features, right_target, max_depth),
+        "entropy": entropy(target_arr),
+        "information_gain": information_gain_best,
+        "left": build_tree(left_features, left_target, max_depth, entropy(left_target)),
+        "right": build_tree(
+            right_features, right_target, max_depth, entropy(right_target)
+        ),
+        "samples": len(target_arr),
     }
 
     return tree
