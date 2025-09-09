@@ -1,3 +1,6 @@
+# This code trains a decision tree and a random forest on the breast cancer dataset
+# It then compares the performance of the custom decision tree and random forest with the sklearn implementation
+
 import numpy as np
 import pandas as pd
 from DecisionTree import DecisionTree
