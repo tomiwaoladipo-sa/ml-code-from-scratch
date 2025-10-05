@@ -37,7 +37,7 @@ def dz_dw(x):
     return x
 
 
-def derivative_choice(string, obs=None, pred=None, X=None, w=None, z=None, y=None):
+def derivative_choice(string, obs=None, pred=None, X=None, w=None, z=None, y=None, layer=None):
     """
     This function takes a string and returns the corresponding derivative function.
     """
@@ -46,11 +46,16 @@ def derivative_choice(string, obs=None, pred=None, X=None, w=None, z=None, y=Non
     elif string == "dp_dw":
         return y
     elif string == "dp_dy":
-        return w
+        if layer == 0:
+            w_output = w
+        else:
+            w_output = w[:-1, :] # remove bias weight
+        return w_output
     elif string == "dy_dz":
-        return relu_derivative(z)
+        z_derivative = relu_derivative(z)
+        return z_derivative
     elif string == "dz_dy":
-        return w
+        return w[:-1, :] # remove bias weight
     elif string == "dz_dw":
         return X
     else:
@@ -65,6 +70,7 @@ def build_derivative_chain(weights_lst, obs, pred, X, z_lst, y_lst):
     derivative_dict = {}
     derivative_dict_value = {}
     number_of_weight_layers = len(weights_lst)
+
     for i in range(number_of_weight_layers):
         derivative_dict[i] = None
 
@@ -75,67 +81,43 @@ def build_derivative_chain(weights_lst, obs, pred, X, z_lst, y_lst):
                     derivative_dict[j] = ["dssr_dp", "dp_dw"]
                     derivative_dict_value[j] = [
                         derivative_choice("dssr_dp", obs=obs, pred=pred),
-                        derivative_choice("dp_dw", y=y_lst_reverse[i]),
+                        derivative_choice("dp_dw", y=add_bias(y_lst_reverse[i])),
                     ]
 
                 else:
                     derivative_dict[j] = ["dssr_dp", "dp_dy"]
                     derivative_dict_value[j] = [
                         derivative_choice("dssr_dp", obs=obs, pred=pred),
-                        derivative_choice("dp_dy", w=weights_lst_reverse[i]),
+                        derivative_choice("dp_dy", obs=obs, w=weights_lst_reverse[i], layer=j),
                     ]
         if i > 0:
             for j in derivative_dict.keys():
                 if j > 0 and j == i:
-
                     derivative_dict[j].append("dy_dz")
                     derivative_dict_value[j].append(
-                        derivative_choice("dy_dz", z=z_lst_reverse[i - 1])
+                        derivative_choice("dy_dz", obs=obs, z=z_lst_reverse[i - 1])
                     )
-                    derivative_dict[j].append("dz_dw")
+                    
                     if i == number_of_weight_layers - 1:
+                        derivative_dict[j].append("dz_dw")
                         derivative_dict_value[j].append(derivative_choice("dz_dw", X=X))
                     else:
+                        derivative_dict[j].append("dz_dw")
                         derivative_dict_value[j].append(
-                            derivative_choice("dz_dw", X=y_lst_reverse[i - 2])
+                            derivative_choice("dz_dw", X=add_bias(y_lst_reverse[i - 2]))
                         )
 
                 elif j > 0 and j > i:
 
                     derivative_dict[j].append("dy_dz")
                     derivative_dict_value[j].append(
-                        derivative_choice("dy_dz", z=z_lst_reverse[i - 1])
+                        derivative_choice("dy_dz", obs=obs, z=z_lst_reverse[i - 1])
                     )
                     derivative_dict[j].append("dz_dy")
                     derivative_dict_value[j].append(
-                        derivative_choice("dz_dy", w=weights_lst_reverse[i])
+                        derivative_choice("dz_dy", obs=obs, w=weights_lst_reverse[i])
                     )
     return derivative_dict, derivative_dict_value
-
-
-hidden_layer_size = [4, 3]
-
-# Sample input data: 2 samples, 3 features each
-X = np.array(
-    [
-        [1.0, 2.0, 3.0],  # Sample 1
-        [4.0, 5.0, 6.0],  # Sample 2
-    ]
-)  # Shape: (2, 3)
-
-obs = np.array(
-    [
-        [0],
-        [1.0],  # Sample 1 observed value
-    ]
-)  # Observed values (2 samples)
-
-# X_with_bias = np.c_[X, np.ones(X.shape[0])]  # Add bias term (1) to the input data
-
-# n_rows, n_cols = X.shape
-
-hidden_layer_size_with_last = hidden_layer_size + [1]  # Add output layer size
-
 
 def add_bias(X):
     return np.c_[X, np.ones(X.shape[0])]
@@ -143,7 +125,9 @@ def add_bias(X):
 
 def generate_random_weights(X, size):
     # Generate random weights for the layer
-    W = np.random.randn(X.shape[1], size)
+    limit = np.sqrt(6 / (X.shape[1] + size))
+    W = np.random.uniform(-limit, limit, (X.shape[1], size))
+    # W = np.random.randn(X.shape[1], size)
     return W
 
 
@@ -169,7 +153,7 @@ def forward_pass(X, hidden_layer_size_with_last, weights=None):
             # 2. apply the activation function (ReLU)
             y = relu(Z)
             y_lst.append(y)
-            print(current_input.shape, " x ", W.shape, " = ", y.shape)
+            # print(current_input.shape, " x ", W.shape, " = ", y.shape)
             # 3. add bias
             # For hidden layers, add bias
             y_with_bias = np.c_[y, np.ones(y.shape[0])]
@@ -183,15 +167,90 @@ def forward_pass(X, hidden_layer_size_with_last, weights=None):
     return pred, input_lst, weights_lst, z_lst, y_lst, X_with_bias
 
 
-pred, input_lst, weights_lst, z_lst, y_lst, X_with_bias = forward_pass(
-    X, hidden_layer_size_with_last
-)
+def gradient(derivative_chain_values, derivative_chain, obs):
+    derivative_product = None
+    for val, deriv in zip(derivative_chain_values, derivative_chain):
+        if derivative_product is not None:
+            if deriv == "dy_dz":
+                derivative_product = derivative_product*val
+            elif deriv in ["dz_dw", "dp_dw"]:
+                derivative_product = np.dot(derivative_product.T, val)
+            else:
+                derivative_product = np.dot(derivative_product, val.T)
+        else:
+            derivative_product = val
+    return derivative_product/obs.shape[0]
+
+def new_weights(weights, gradient, learning_rate=0.01):
+    if weights.shape != gradient.shape:
+        output = weights - gradient.T*learning_rate
+    else: 
+        output = weights - learning_rate*gradient
+    return output
+    
+
+def gradient_descent(weights_lst, derivative_chain_values_lst, derivative_chain_lst, obs, learning_rate=0.001):
+    new_weights_lst = []
+    weight_layers = len(weights_lst)
+    for i in range(weight_layers):
+        gradient_i = gradient(derivative_chain_values_lst[weight_layers-i-1], derivative_chain_lst[weight_layers-i-1], obs)
+        new_w = new_weights(weights_lst[i], gradient_i, learning_rate)
+        new_weights_lst.append(new_w)
+    return new_weights_lst
+
+if __name__ == "__main__":
+    from sklearn.datasets import fetch_california_housing
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.metrics import r2_score, mean_squared_error
+
+    # Sample input data: 2 samples, 3 features each
+    X = np.array(
+        [
+            [1.0, 2.0, 3.0],  # Sample 1
+            [4.0, 5.0, 6.0],  # Sample 2
+        ]
+    )  # Shape: (2, 3)
+
+    obs = np.array(
+        [
+            [0],
+            [1.0],  # Sample 1 observed value
+        ]
+    )  # Observed values (2 samples)
+    # Load the california Housing Dataset
+    california = fetch_california_housing()
+
+    X = california.data  # Features
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
+    
+    obs = california.target.reshape(-1, 1)
+    target_scaler = StandardScaler()
+    obs = target_scaler.fit_transform(obs)
+
+    # Define the neural network architecture
+    hidden_layer_size = [16, 8]
+
+    hidden_layer_size_with_last = hidden_layer_size + [1]  # Add output layer size
+
+    # Initial forward pass
+    pred, input_lst, weights_lst, z_lst, y_lst, X_with_bias = forward_pass(
+        X, hidden_layer_size_with_last
+    )
+
+    for iter in range(50):
+        derivative_chain, derivative_chain_values = build_derivative_chain(
+            weights_lst, obs, pred, X_with_bias, z_lst, y_lst
+        )  
+
+        new_weights_lst = gradient_descent(weights_lst, derivative_chain_values, derivative_chain, obs, learning_rate=0.1)
+
+        pred, input_lst, weights_lst, z_lst, y_lst, X_with_bias = forward_pass(X, hidden_layer_size_with_last, weights=new_weights_lst)
+        print(round(r2_score(obs, pred), 2), " ", round(mean_squared_error(obs, pred)**(1/2), 2))
+        
+
+    
 
 
-derivative_chain, derivative_chain_values = build_derivative_chain(
-    weights_lst, obs, pred, X_with_bias, z_lst, y_lst
-)  # dz/dw shuldn't be X only it can be y from before
-print(derivative_chain, "derivative chain")
-print(derivative_chain_values[1], "derivative chain values")
-print("y:", y_lst)
-# print(X_with_bias)
+
+
