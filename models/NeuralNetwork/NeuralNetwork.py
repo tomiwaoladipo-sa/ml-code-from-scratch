@@ -202,7 +202,8 @@ if __name__ == "__main__":
     from sklearn.datasets import fetch_california_housing
     from sklearn.preprocessing import StandardScaler
     from sklearn.metrics import r2_score, mean_squared_error
-
+    import matplotlib.pyplot as plt
+    from matplotlib.animation import FuncAnimation
     # Sample input data: 2 samples, 3 features each
     X = np.array(
         [
@@ -237,8 +238,11 @@ if __name__ == "__main__":
     pred, input_lst, weights_lst, z_lst, y_lst, X_with_bias = forward_pass(
         X, hidden_layer_size_with_last
     )
+    # Store predictions at each epoch
+    predictions_over_epochs = []
+    r2_epochs = []
 
-    for iter in range(50):
+    for iter in range(100):
         derivative_chain, derivative_chain_values = build_derivative_chain(
             weights_lst, obs, pred, X_with_bias, z_lst, y_lst
         )  
@@ -246,11 +250,34 @@ if __name__ == "__main__":
         new_weights_lst = gradient_descent(weights_lst, derivative_chain_values, derivative_chain, obs, learning_rate=0.1)
 
         pred, input_lst, weights_lst, z_lst, y_lst, X_with_bias = forward_pass(X, hidden_layer_size_with_last, weights=new_weights_lst)
-        print(round(r2_score(obs, pred), 2), " ", round(mean_squared_error(obs, pred)**(1/2), 2))
-        
+        predictions_over_epochs.append(pred.copy())
+        r2_epochs.append(round(r2_score(obs, pred),2))
+        # print(round(r2_score(obs, pred), 2), " ", round(mean_squared_error(obs, pred)**(1/2), 2))
+  
+    # Prepare the figure and axis
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    
+    # Plot the true observations (static)
+    ax.scatter(X[:, 0], target_scaler.inverse_transform(obs), color='black', label='True Observations', alpha=0.8)
 
+    # Initialize the scatter plot for predictions
+    pred_scatter = ax.scatter([], [], color='blue', label='Predictions', alpha=0.6)
 
+    # Set labels and title
+    ax.set_xlabel(f'Feature {0}')
+    ax.set_ylabel('Target Value')
+    ax.set_title('Predictions vs Observations Over Epochs')
+    ax.legend()
 
+    # Function to update the plot for each epoch
+    def update(epoch):
+        preds = predictions_over_epochs[epoch]
+        r2 = r2_epochs[epoch]
+        pred_scatter.set_offsets(np.c_[X[:, 0], target_scaler.inverse_transform(preds)])
+        ax.set_title(f'Predictions vs Observations (Epoch {epoch} - R²: {r2})')
 
+    # Create the animation
+    ani = FuncAnimation(fig, update, frames=len(predictions_over_epochs), interval=200)
+
+    # Show the animation
+    plt.show()
